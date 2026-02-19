@@ -409,3 +409,165 @@ fn test_contribute_above_minimum() {
     assert_eq!(client.total_raised(), 50_000);
     assert_eq!(client.contribution(&contributor), 50_000);
 }
+
+
+// ── Roadmap Tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_add_single_roadmap_item() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let current_time = env.ledger().timestamp();
+    let roadmap_date = current_time + 86400; // 1 day in the future
+    let description = soroban_sdk::String::from_str(&env, "Beta release");
+
+    client.add_roadmap_item(&roadmap_date, &description);
+
+    let roadmap = client.roadmap();
+    assert_eq!(roadmap.len(), 1);
+    assert_eq!(roadmap.get(0).unwrap().date, roadmap_date);
+    assert_eq!(roadmap.get(0).unwrap().description, description);
+}
+
+#[test]
+fn test_add_multiple_roadmap_items_in_order() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let current_time = env.ledger().timestamp();
+    let date1 = current_time + 86400;
+    let date2 = current_time + 172800;
+    let date3 = current_time + 259200;
+
+    let desc1 = soroban_sdk::String::from_str(&env, "Alpha release");
+    let desc2 = soroban_sdk::String::from_str(&env, "Beta release");
+    let desc3 = soroban_sdk::String::from_str(&env, "Production launch");
+
+    client.add_roadmap_item(&date1, &desc1);
+    client.add_roadmap_item(&date2, &desc2);
+    client.add_roadmap_item(&date3, &desc3);
+
+    let roadmap = client.roadmap();
+    assert_eq!(roadmap.len(), 3);
+    assert_eq!(roadmap.get(0).unwrap().date, date1);
+    assert_eq!(roadmap.get(1).unwrap().date, date2);
+    assert_eq!(roadmap.get(2).unwrap().date, date3);
+    assert_eq!(roadmap.get(0).unwrap().description, desc1);
+    assert_eq!(roadmap.get(1).unwrap().description, desc2);
+    assert_eq!(roadmap.get(2).unwrap().description, desc3);
+}
+
+#[test]
+#[should_panic(expected = "date must be in the future")]
+fn test_add_roadmap_item_with_past_date_panics() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let current_time = env.ledger().timestamp();
+    // Set a past date by moving time forward first, then trying to add an item with an earlier date
+    env.ledger().set_timestamp(current_time + 1000);
+    let past_date = current_time + 500; // Earlier than the new current time
+    let description = soroban_sdk::String::from_str(&env, "Past milestone");
+
+    client.add_roadmap_item(&past_date, &description); // should panic
+}
+
+#[test]
+#[should_panic(expected = "date must be in the future")]
+fn test_add_roadmap_item_with_current_date_panics() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let current_time = env.ledger().timestamp();
+    let description = soroban_sdk::String::from_str(&env, "Current milestone");
+
+    client.add_roadmap_item(&current_time, &description); // should panic
+}
+
+#[test]
+#[should_panic(expected = "description cannot be empty")]
+fn test_add_roadmap_item_with_empty_description_panics() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let current_time = env.ledger().timestamp();
+    let roadmap_date = current_time + 86400;
+    let empty_description = soroban_sdk::String::from_str(&env, "");
+
+    client.add_roadmap_item(&roadmap_date, &empty_description); // should panic
+}
+
+#[test]
+#[should_panic]
+fn test_add_roadmap_item_by_non_creator_panics() {
+    let env = Env::default();
+    let contract_id = env.register(crate::CrowdfundContract, ());
+    let client = crate::CrowdfundContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_address = token_contract_id.address();
+
+    let creator = Address::generate(&env);
+    let non_creator = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    env.mock_all_auths_allowing_non_root_auth();
+    env.set_auths(&[]);
+
+    let current_time = env.ledger().timestamp();
+    let roadmap_date = current_time + 86400;
+    let description = soroban_sdk::String::from_str(&env, "Milestone");
+
+    client.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &non_creator,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "add_roadmap_item",
+            args: soroban_sdk::vec![&env],
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.add_roadmap_item(&roadmap_date, &description); // should panic
+}
+
+#[test]
+fn test_roadmap_empty_after_initialization() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let roadmap = client.roadmap();
+    assert_eq!(roadmap.len(), 0);
+}
