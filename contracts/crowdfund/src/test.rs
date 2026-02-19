@@ -1,11 +1,9 @@
-#![cfg(test)]
-
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token, Address, Env,
 };
 
-use crate::{CrowdfundContract, CrowdfundContractClient};
+use crate::{CrowdfundContract, CrowdfundContractClient, PlatformConfig};
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -63,7 +61,6 @@ fn test_initialize() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     assert_eq!(client.goal(), goal);
@@ -88,7 +85,6 @@ fn test_double_initialize_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
     client.initialize(
         &creator,
@@ -96,7 +92,6 @@ fn test_double_initialize_panics() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     ); // should panic
 }
@@ -114,7 +109,6 @@ fn test_contribute() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -140,7 +134,6 @@ fn test_multiple_contributions() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -172,7 +165,6 @@ fn test_contribute_after_deadline_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     // Fast-forward past the deadline.
@@ -197,7 +189,6 @@ fn test_withdraw_after_goal_met() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -235,7 +226,6 @@ fn test_withdraw_before_deadline_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let contributor = Address::generate(&env);
@@ -259,7 +249,6 @@ fn test_withdraw_goal_not_reached_panics() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -286,7 +275,6 @@ fn test_refund_when_goal_not_met() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -325,7 +313,6 @@ fn test_refund_when_goal_reached_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let contributor = Address::generate(&env);
@@ -351,7 +338,6 @@ fn test_double_withdraw_panics() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -380,7 +366,6 @@ fn test_double_refund_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let alice = Address::generate(&env);
@@ -407,7 +392,6 @@ fn test_cancel_with_no_contributions() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     client.cancel();
@@ -428,7 +412,6 @@ fn test_cancel_with_contributions() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -474,7 +457,6 @@ fn test_cancel_by_non_creator_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     env.mock_all_auths_allowing_non_root_auth();
@@ -510,7 +492,6 @@ fn test_contribute_below_minimum_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let contributor = Address::generate(&env);
@@ -532,7 +513,6 @@ fn test_contribute_exact_minimum() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -558,7 +538,6 @@ fn test_contribute_above_minimum() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -587,7 +566,6 @@ fn test_add_single_roadmap_item() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let current_time = env.ledger().timestamp();
@@ -615,7 +593,6 @@ fn test_add_multiple_roadmap_items_in_order() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -657,7 +634,6 @@ fn test_add_roadmap_item_with_past_date_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let current_time = env.ledger().timestamp();
@@ -684,7 +660,6 @@ fn test_add_roadmap_item_with_current_date_panics() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let current_time = env.ledger().timestamp();
@@ -707,7 +682,6 @@ fn test_add_roadmap_item_with_empty_description_panics() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -743,7 +717,6 @@ fn test_add_roadmap_item_by_non_creator_panics() {
         &goal,
         &deadline,
         &min_contribution,
-        &None,
         &None,
     );
 
@@ -781,7 +754,6 @@ fn test_roadmap_empty_after_initialization() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let roadmap = client.roadmap();
@@ -800,14 +772,18 @@ fn test_withdraw_with_platform_fee_2_5_percent() {
     let platform = Address::generate(&env);
     let platform_fee_bps = 250u32; // 2.5%
 
+    let platform_config = PlatformConfig {
+        address: platform.clone(),
+        fee_bps: platform_fee_bps,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform.clone()),
-        &Some(platform_fee_bps),
+        &Some(platform_config),
     );
 
     let contributor = Address::generate(&env);
@@ -841,7 +817,6 @@ fn test_withdraw_without_platform_fee() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
     let contributor = Address::generate(&env);
@@ -867,14 +842,18 @@ fn test_withdraw_with_zero_fee() {
     let platform = Address::generate(&env);
     let platform_fee_bps = 0u32; // 0%
 
+    let platform_config = PlatformConfig {
+        address: platform.clone(),
+        fee_bps: platform_fee_bps,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform.clone()),
-        &Some(platform_fee_bps),
+        &Some(platform_config),
     );
 
     let contributor = Address::generate(&env);
@@ -903,14 +882,18 @@ fn test_withdraw_with_fee_rounding() {
     let platform = Address::generate(&env);
     let platform_fee_bps = 333u32; // 3.33%
 
+    let platform_config = PlatformConfig {
+        address: platform.clone(),
+        fee_bps: platform_fee_bps,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform.clone()),
-        &Some(platform_fee_bps),
+        &Some(platform_config),
     );
 
     let contributor = Address::generate(&env);
@@ -945,14 +928,18 @@ fn test_initialize_with_fee_over_100_percent_panics() {
     let platform = Address::generate(&env);
     let platform_fee_bps = 10_001u32; // > 100%
 
+    let platform_config = PlatformConfig {
+        address: platform,
+        fee_bps: platform_fee_bps,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform),
-        &Some(platform_fee_bps),
+        &Some(platform_config),
     );
 }
 
@@ -966,17 +953,22 @@ fn test_platform_fee_bps_getter() {
     let platform = Address::generate(&env);
     let platform_fee_bps = 500u32; // 5%
 
+    let platform_config = PlatformConfig {
+        address: platform,
+        fee_bps: platform_fee_bps,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform),
-        &Some(platform_fee_bps),
+        &Some(platform_config),
     );
 
-    assert_eq!(client.platform_fee_bps(), 500);
+    let config = client.platform_config();
+    assert_eq!(config.unwrap().fee_bps, 500);
 }
 
 #[test]
@@ -994,10 +986,9 @@ fn test_platform_fee_bps_getter_when_not_set() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
-    assert_eq!(client.platform_fee_bps(), 0);
+    assert_eq!(client.platform_config(), None);
 }
 
 #[test]
@@ -1009,17 +1000,21 @@ fn test_platform_address_getter() {
     let min_contribution: i128 = 1_000;
     let platform = Address::generate(&env);
 
+    let platform_config = PlatformConfig {
+        address: platform.clone(),
+        fee_bps: 250,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform.clone()),
-        &Some(250),
+        &Some(platform_config),
     );
 
-    assert_eq!(client.platform_address(), Some(platform));
+    assert_eq!(client.platform_config().unwrap().address, platform);
 }
 
 #[test]
@@ -1037,10 +1032,9 @@ fn test_platform_address_getter_when_not_set() {
         &deadline,
         &min_contribution,
         &None,
-        &None,
     );
 
-    assert_eq!(client.platform_address(), None);
+    assert_eq!(client.platform_config(), None);
 }
 
 #[test]
@@ -1053,14 +1047,18 @@ fn test_withdraw_with_platform_fee_10_percent() {
     let platform = Address::generate(&env);
     let platform_fee_bps = 1_000u32; // 10%
 
+    let platform_config = PlatformConfig {
+        address: platform.clone(),
+        fee_bps: platform_fee_bps,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform.clone()),
-        &Some(platform_fee_bps),
+        &Some(platform_config),
     );
 
     let contributor = Address::generate(&env);
@@ -1089,14 +1087,18 @@ fn test_withdraw_with_platform_fee_max_100_percent() {
     let platform = Address::generate(&env);
     let platform_fee_bps = 10_000u32; // 100%
 
+    let platform_config = PlatformConfig {
+        address: platform.clone(),
+        fee_bps: platform_fee_bps,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform.clone()),
-        &Some(platform_fee_bps),
+        &Some(platform_config),
     );
 
     let contributor = Address::generate(&env);
@@ -1125,14 +1127,18 @@ fn test_withdraw_with_platform_fee_multiple_contributors() {
     let platform = Address::generate(&env);
     let platform_fee_bps = 250u32; // 2.5%
 
+    let platform_config = PlatformConfig {
+        address: platform.clone(),
+        fee_bps: platform_fee_bps,
+    };
+
     client.initialize(
         &creator,
         &token_address,
         &goal,
         &deadline,
         &min_contribution,
-        &Some(platform.clone()),
-        &Some(platform_fee_bps),
+        &Some(platform_config),
     );
 
     let alice = Address::generate(&env);

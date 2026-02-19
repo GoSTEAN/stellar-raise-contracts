@@ -23,6 +23,13 @@ pub struct RoadmapItem {
     pub description: String,
 }
 
+#[derive(Clone, PartialEq, Debug)]
+#[contracttype]
+pub struct PlatformConfig {
+    pub address: Address,
+    pub fee_bps: u32,
+}
+
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey {
@@ -46,10 +53,8 @@ pub enum DataKey {
     MinContribution,
     /// List of roadmap items with dates and descriptions.
     Roadmap,
-    /// Platform fee in basis points (e.g., 250 = 2.5%).
-    PlatformFeePercent,
-    /// Platform address to receive fees.
-    PlatformAddress,
+    /// Platform configuration (address and fee in basis points).
+    PlatformConfig,
 }
 
 // ── Contract ────────────────────────────────────────────────────────────────
@@ -67,12 +72,11 @@ impl CrowdfundContract {
     /// * `goal`               – The funding goal (in the token's smallest unit).
     /// * `deadline`           – The campaign deadline as a ledger timestamp.
     /// * `min_contribution`   – The minimum contribution amount.
-    /// * `platform_address`   – Optional platform address to receive fees.
-    /// * `platform_fee_bps`   – Optional platform fee in basis points (e.g., 250 = 2.5%).
+    /// * `platform_config`    – Optional platform configuration (address and fee in basis points).
     ///
     /// # Panics
     /// * If already initialized.
-    /// * If `platform_fee_bps` is provided and exceeds 10,000 (100%).
+    /// * If platform fee exceeds 10,000 (100%).
     pub fn initialize(
         env: Env,
         creator: Address,
@@ -80,8 +84,7 @@ impl CrowdfundContract {
         goal: i128,
         deadline: u64,
         min_contribution: i128,
-        platform_address: Option<Address>,
-        platform_fee_bps: Option<u32>,
+        platform_config: Option<PlatformConfig>,
     ) {
         // Prevent re-initialization.
         if env.storage().instance().has(&DataKey::Creator) {
@@ -91,8 +94,8 @@ impl CrowdfundContract {
         creator.require_auth();
 
         // Validate platform fee if provided.
-        if let Some(fee_bps) = platform_fee_bps {
-            if fee_bps > 10_000 {
+        if let Some(ref config) = platform_config {
+            if config.fee_bps > 10_000 {
                 panic!("platform fee cannot exceed 100%");
             }
         }
@@ -109,16 +112,11 @@ impl CrowdfundContract {
             .instance()
             .set(&DataKey::Status, &Status::Active);
 
-        // Store platform fee configuration if provided.
-        if let Some(fee_bps) = platform_fee_bps {
+        // Store platform configuration if provided.
+        if let Some(config) = platform_config {
             env.storage()
                 .instance()
-                .set(&DataKey::PlatformFeePercent, &fee_bps);
-        }
-        if let Some(platform) = platform_address {
-            env.storage()
-                .instance()
-                .set(&DataKey::PlatformAddress, &platform);
+                .set(&DataKey::PlatformConfig, &config);
         }
 
         let empty_contributors: Vec<Address> = Vec::new(&env);
@@ -219,32 +217,29 @@ impl CrowdfundContract {
         let token_client = token::Client::new(&env, &token_address);
 
         // Calculate and transfer platform fee if configured.
-        let platform_fee_bps: Option<u32> =
-            env.storage().instance().get(&DataKey::PlatformFeePercent);
-        let platform_address: Option<Address> =
-            env.storage().instance().get(&DataKey::PlatformAddress);
+        let platform_config: Option<PlatformConfig> =
+            env.storage().instance().get(&DataKey::PlatformConfig);
 
-        let creator_payout =
-            if let (Some(fee_bps), Some(platform)) = (platform_fee_bps, platform_address) {
-                // Calculate fee using checked arithmetic to prevent overflow.
-                let fee = total
-                    .checked_mul(fee_bps as i128)
-                    .expect("fee calculation overflow")
-                    .checked_div(10_000)
-                    .expect("fee division by zero");
+        let creator_payout = if let Some(config) = platform_config {
+            // Calculate fee using checked arithmetic to prevent overflow.
+            let fee = total
+                .checked_mul(config.fee_bps as i128)
+                .expect("fee calculation overflow")
+                .checked_div(10_000)
+                .expect("fee division by zero");
 
-                // Transfer fee to platform.
-                token_client.transfer(&env.current_contract_address(), &platform, &fee);
+            // Transfer fee to platform.
+            token_client.transfer(&env.current_contract_address(), &config.address, &fee);
 
-                // Emit event with fee details.
-                env.events()
-                    .publish(("campaign", "fee_transferred"), (&platform, fee));
+            // Emit event with fee details.
+            env.events()
+                .publish(("campaign", "fee_transferred"), (&config.address, fee));
 
-                // Calculate creator payout.
-                total.checked_sub(fee).expect("creator payout underflow")
-            } else {
-                total
-            };
+            // Calculate creator payout.
+            total.checked_sub(fee).expect("creator payout underflow")
+        } else {
+            total
+        };
 
         // Transfer remainder to creator.
         token_client.transfer(&env.current_contract_address(), &creator, &creator_payout);
@@ -420,16 +415,8 @@ impl CrowdfundContract {
             .unwrap()
     }
 
-    /// Returns the platform fee in basis points, or 0 if not set.
-    pub fn platform_fee_bps(env: Env) -> u32 {
-        env.storage()
-            .instance()
-            .get(&DataKey::PlatformFeePercent)
-            .unwrap_or(0)
-    }
-
-    /// Returns the platform address, or None if not set.
-    pub fn platform_address(env: Env) -> Option<Address> {
-        env.storage().instance().get(&DataKey::PlatformAddress)
+    /// Returns the platform configuration, or None if not set.
+    pub fn platform_config(env: Env) -> Option<PlatformConfig> {
+        env.storage().instance().get(&DataKey::PlatformConfig)
     }
 }
