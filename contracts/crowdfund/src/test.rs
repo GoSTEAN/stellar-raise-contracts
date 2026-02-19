@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::{Address as _, Ledger}, token, Address, Env};
+use soroban_sdk::{testutils::{Address as _, Ledger}, token, Address, Env, String};
 
 use crate::{CrowdfundContract, CrowdfundContractClient};
 
@@ -408,4 +408,137 @@ fn test_contribute_above_minimum() {
 
     assert_eq!(client.total_raised(), 50_000);
     assert_eq!(client.contribution(&contributor), 50_000);
+}
+
+// ── Metadata Update Tests ──────────────────────────────────────────────────
+
+/// Helper to create a String from a &str.
+fn str_to_string(env: &Env, s: &str) -> String {
+    String::from_slice(env, s)
+}
+
+#[test]
+fn test_update_title() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let new_title = str_to_string(&env, "New Campaign Title");
+    client.update_metadata(&creator, &Some(new_title.clone()), &None, &None);
+
+    assert_eq!(client.title(), new_title);
+}
+
+#[test]
+fn test_update_description() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let new_description = str_to_string(&env, "This is an updated description for the campaign.");
+    client.update_metadata(&creator, &None, &Some(new_description.clone()), &None);
+
+    assert_eq!(client.description(), new_description);
+}
+
+#[test]
+fn test_update_socials() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let new_socials = str_to_string(&env, "https://twitter.com/campaign");
+    client.update_metadata(&creator, &None, &None, &Some(new_socials.clone()));
+
+    assert_eq!(client.socials(), new_socials);
+}
+
+#[test]
+fn test_partial_update() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    // First set all fields.
+    let initial_title = str_to_string(&env, "Initial Title");
+    let initial_description = str_to_string(&env, "Initial Description");
+    let initial_socials = str_to_string(&env, "https://initial.social");
+    client.update_metadata(
+        &creator,
+        &Some(initial_title.clone()),
+        &Some(initial_description.clone()),
+        &Some(initial_socials.clone()),
+    );
+
+    assert_eq!(client.title(), initial_title);
+    assert_eq!(client.description(), initial_description);
+    assert_eq!(client.socials(), initial_socials);
+
+    // Now update only title and socials, leaving description unchanged.
+    let new_title = str_to_string(&env, "Updated Title");
+    let new_socials = str_to_string(&env, "https://updated.social");
+    client.update_metadata(
+        &creator,
+        &Some(new_title.clone()),
+        &None,
+        &Some(new_socials.clone()),
+    );
+
+    // Title and socials should be updated.
+    assert_eq!(client.title(), new_title);
+    assert_eq!(client.socials(), new_socials);
+    // Description should remain unchanged.
+    assert_eq!(client.description(), initial_description);
+}
+
+#[test]
+#[should_panic(expected = "campaign is not active")]
+fn test_update_metadata_when_not_active_panics() {
+    let (env, client, creator, token_address, admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    // Make a contribution to meet the goal.
+    let contributor = Address::generate(&env);
+    mint_to(&env, &token_address, &admin, &contributor, 1_000_000);
+    client.contribute(&contributor, &1_000_000);
+
+    // Move past deadline and withdraw to set status to Successful.
+    env.ledger().set_timestamp(deadline + 1);
+    client.withdraw();
+
+    // Try to update metadata - should panic because status is not Active.
+    let new_title = str_to_string(&env, "New Title");
+    client.update_metadata(&creator, &Some(new_title), &None, &None);
+}
+
+#[test]
+#[should_panic(expected = "not authorized")]
+fn test_update_metadata_by_non_creator_panics() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    // Try to update metadata from a non-creator address - should panic.
+    let non_creator = Address::generate(&env);
+    let new_title = str_to_string(&env, "New Title");
+    client.update_metadata(&non_creator, &Some(new_title), &None, &None);
 }
