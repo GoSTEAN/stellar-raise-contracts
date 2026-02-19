@@ -25,6 +25,17 @@ pub struct RoadmapItem {
 
 #[derive(Clone)]
 #[contracttype]
+pub struct CampaignStats {
+    pub total_raised: i128,
+    pub goal: i128,
+    pub progress_bps: u32,
+    pub contributor_count: u32,
+    pub average_contribution: i128,
+    pub largest_contribution: i128,
+}
+
+#[derive(Clone)]
+#[contracttype]
 pub enum DataKey {
     /// The address of the campaign creator.
     Creator,
@@ -46,6 +57,8 @@ pub enum DataKey {
     MinContribution,
     /// List of roadmap items with dates and descriptions.
     Roadmap,
+    /// The address authorized to upgrade the contract.
+    Admin,
 }
 
 // ── Contract ────────────────────────────────────────────────────────────────
@@ -85,6 +98,7 @@ impl CrowdfundContract {
         env.storage().instance().set(&DataKey::MinContribution, &min_contribution);
         env.storage().instance().set(&DataKey::TotalRaised, &0i128);
         env.storage().instance().set(&DataKey::Status, &Status::Active);
+        env.storage().instance().set(&DataKey::Admin, &creator);
 
         let empty_contributors: Vec<Address> = Vec::new(&env);
         env.storage()
@@ -279,6 +293,24 @@ impl CrowdfundContract {
 
         env.storage().instance().set(&DataKey::TotalRaised, &0i128);
         env.storage().instance().set(&DataKey::Status, &Status::Cancelled);
+    }
+
+    /// Upgrade the contract to a new WASM implementation — admin-only.
+    ///
+    /// This function allows the designated admin to upgrade the contract's WASM code
+    /// without changing the contract's address or storage. The new WASM hash must be
+    /// provided and the caller must be authorized as the admin.
+    ///
+    /// # Arguments
+    /// * `new_wasm_hash` – The SHA-256 hash of the new WASM binary to deploy.
+    ///
+    /// # Panics
+    /// * If the caller is not the admin.
+    pub fn upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     // ── View helpers ────────────────────────────────────────────────────
