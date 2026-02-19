@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::{Address as _, Ledger}, token, Address, Env};
+use soroban_sdk::{testutils::{Address as _, Ledger}, token, Address, Env, Vec};
 
 use crate::{CrowdfundContract, CrowdfundContractClient};
 
@@ -408,4 +408,111 @@ fn test_contribute_above_minimum() {
 
     assert_eq!(client.total_raised(), 50_000);
     assert_eq!(client.contribution(&contributor), 50_000);
+}
+
+// ── Event Emission Tests ────────────────────────────────────────────────────
+
+#[test]
+fn test_initialize_emits_event() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let events = env.events().all();
+    assert_eq!(events.len(), 1);
+    
+    let event = &events.get(0).unwrap();
+    assert_eq!(event.topics.get(0).unwrap(), &soroban_sdk::Val::Symbol("campaign".into(&env)));
+    assert_eq!(event.topics.get(1).unwrap(), &soroban_sdk::Val::Symbol("initialized".into(&env)));
+}
+
+#[test]
+fn test_contribute_emits_event() {
+    let (env, client, creator, token_address, admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let contributor = Address::generate(&env);
+    mint_to(&env, &token_address, &admin, &contributor, 500_000);
+
+    client.contribute(&contributor, &500_000);
+
+    let events = env.events().all();
+    // Should have 1 initialize + 1 contribute event
+    assert_eq!(events.len(), 2);
+    
+    let contribute_event = &events.get(1).unwrap();
+    assert_eq!(contribute_event.topics.get(0).unwrap(), &soroban_sdk::Val::Symbol("campaign".into(&env)));
+    assert_eq!(contribute_event.topics.get(1).unwrap(), &soroban_sdk::Val::Symbol("contributed".into(&env)));
+}
+
+#[test]
+fn test_withdraw_emits_event() {
+    let (env, client, creator, token_address, admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let contributor = Address::generate(&env);
+    mint_to(&env, &token_address, &admin, &contributor, 1_000_000);
+    client.contribute(&contributor, &1_000_000);
+
+    // Move past deadline
+    env.ledger().set_timestamp(deadline + 1);
+
+    client.withdraw();
+
+    let events = env.events().all();
+    // Should have initialize + contribute + withdraw events
+    assert_eq!(events.len(), 3);
+    
+    let withdraw_event = &events.get(2).unwrap();
+    assert_eq!(withdraw_event.topics.get(0).unwrap(), &soroban_sdk::Val::Symbol("campaign".into(&env)));
+    assert_eq!(withdraw_event.topics.get(1).unwrap(), &soroban_sdk::Val::Symbol("withdrawn".into(&env)));
+}
+
+#[test]
+fn test_refund_emits_events() {
+    let (env, client, creator, token_address, admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    mint_to(&env, &token_address, &admin, &alice, 300_000);
+    mint_to(&env, &token_address, &admin, &bob, 200_000);
+
+    client.contribute(&alice, &300_000);
+    client.contribute(&bob, &200_000);
+
+    // Move past deadline
+    env.ledger().set_timestamp(deadline + 1);
+
+    client.refund();
+
+    let events = env.events().all();
+    // Should have initialize + 2 contributes + 2 refunds
+    assert_eq!(events.len(), 5);
+    
+    // Check first refund event
+    let refund_event_1 = &events.get(3).unwrap();
+    assert_eq!(refund_event_1.topics.get(0).unwrap(), &soroban_sdk::Val::Symbol("campaign".into(&env)));
+    assert_eq!(refund_event_1.topics.get(1).unwrap(), &soroban_sdk::Val::Symbol("refunded".into(&env)));
+
+    // Check second refund event
+    let refund_event_2 = &events.get(4).unwrap();
+    assert_eq!(refund_event_2.topics.get(0).unwrap(), &soroban_sdk::Val::Symbol("campaign".into(&env)));
+    assert_eq!(refund_event_2.topics.get(1).unwrap(), &soroban_sdk::Val::Symbol("refunded".into(&env)));
 }

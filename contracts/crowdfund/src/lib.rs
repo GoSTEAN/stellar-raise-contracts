@@ -81,6 +81,12 @@ impl CrowdfundContract {
         env.storage()
             .instance()
             .set(&DataKey::Contributors, &empty_contributors);
+
+        // Emit initialization event
+        env.events().publish(
+            ("campaign", "initialized"),
+            (creator.clone(), goal, deadline),
+        );
     }
 
     /// Contribute tokens to the campaign.
@@ -137,11 +143,17 @@ impl CrowdfundContract {
             .get(&DataKey::Contributors)
             .unwrap();
         if !contributors.contains(&contributor) {
-            contributors.push_back(contributor);
+            contributors.push_back(contributor.clone());
             env.storage()
                 .instance()
                 .set(&DataKey::Contributors, &contributors);
         }
+
+        // Emit contribution event
+        env.events().publish(
+            ("campaign", "contributed"),
+            (contributor, amount),
+        );
     }
 
     /// Withdraw raised funds — only callable by the creator after the
@@ -173,6 +185,12 @@ impl CrowdfundContract {
 
         env.storage().instance().set(&DataKey::TotalRaised, &0i128);
         env.storage().instance().set(&DataKey::Status, &Status::Successful);
+
+        // Emit withdrawal event
+        env.events().publish(
+            ("campaign", "withdrawn"),
+            (creator.clone(), total),
+        );
     }
 
     /// Refund all contributors — callable by anyone after the deadline
@@ -217,7 +235,13 @@ impl CrowdfundContract {
                 );
                 env.storage()
                     .instance()
-                    .set(&DataKey::Contribution(contributor), &0i128);
+                    .set(&DataKey::Contribution(contributor.clone()), &0i128);
+
+                // Emit refund event for each contributor
+                env.events().publish(
+                    ("campaign", "refunded"),
+                    (contributor.clone(), amount),
+                );
             }
         }
 
