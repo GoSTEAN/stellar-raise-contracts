@@ -358,4 +358,42 @@ impl CrowdfundContract {
     pub fn min_contribution(env: Env) -> i128 {
         env.storage().instance().get(&DataKey::MinContribution).unwrap()
     }
+
+    /// Returns comprehensive campaign statistics.
+    pub fn get_stats(env: Env) -> CampaignStats {
+        let total_raised: i128 = env.storage().instance().get(&DataKey::TotalRaised).unwrap_or(0);
+        let goal: i128 = env.storage().instance().get(&DataKey::Goal).unwrap();
+        let contributors: Vec<Address> = env.storage().instance().get(&DataKey::Contributors).unwrap();
+
+        let progress_bps = if goal > 0 {
+            let raw = (total_raised as i128 * 10_000) / goal;
+            if raw > 10_000 { 10_000 } else { raw as u32 }
+        } else {
+            0
+        };
+
+        let contributor_count = contributors.len();
+        let (average_contribution, largest_contribution) = if contributor_count == 0 {
+            (0, 0)
+        } else {
+            let average = total_raised / contributor_count as i128;
+            let mut largest = 0i128;
+            for contributor in contributors.iter() {
+                let amount: i128 = env.storage().instance().get(&DataKey::Contribution(contributor)).unwrap_or(0);
+                if amount > largest {
+                    largest = amount;
+                }
+            }
+            (average, largest)
+        };
+
+        CampaignStats {
+            total_raised,
+            goal,
+            progress_bps,
+            contributor_count,
+            average_contribution,
+            largest_contribution,
+        }
+    }
 }
