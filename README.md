@@ -9,15 +9,15 @@ Stellar Raise lets anyone create a crowdfunding campaign on-chain. Contributors 
 ### Key Features
 
 | Feature | Description |
-|---|---|
+| :--- | :--- |
 | **Initialize** | Create a campaign with a goal, deadline, and token |
 | **Contribute** | Pledge tokens before the deadline |
 | **Withdraw** | Creator claims funds after a successful campaign |
-| **Refund** | Contributors reclaim tokens if the goal is missed |
+| **Refund** | Contributors individually reclaim tokens if the goal is missed (pull-based) |
 
 ## Project Structure
 
-```
+```text
 stellar-raise-contracts/
 ├── .github/workflows/rust_ci.yml   # CI pipeline
 ├── contracts/crowdfund/
@@ -35,9 +35,11 @@ stellar-raise-contracts/
 
 - [Rust](https://rustup.rs/) (stable)
 - The `wasm32-unknown-unknown` target:
+
   ```bash
   rustup target add wasm32-unknown-unknown
   ```
+
 - [Stellar CLI](https://soroban.stellar.org/docs/getting-started/setup) (optional, for deployment)
 
 ## Getting Started
@@ -58,7 +60,7 @@ cargo test --workspace
 
 ```rust
 // Create a new campaign
-fn initialize(env, creator, token, goal, deadline);
+fn initialize(env, creator, token, goal, deadline, min_contribution);
 
 // Pledge tokens to the campaign
 fn contribute(env, contributor, amount);
@@ -66,14 +68,44 @@ fn contribute(env, contributor, amount);
 // Creator withdraws after successful campaign
 fn withdraw(env);
 
-// Refund all contributors if goal not met
-fn refund(env);
+// Individual contributor claims refund if goal not met (pull-based)
+fn refund_single(env, contributor);
 
 // View functions
 fn total_raised(env) -> i128;
 fn goal(env) -> i128;
 fn deadline(env) -> u64;
 fn contribution(env, contributor) -> i128;
+fn min_contribution(env) -> i128;
+```
+
+## Pull-based Refund Model
+
+This contract uses a **pull-based refund** pattern for scalability and gas efficiency.
+
+### Why Pull-based?
+
+A traditional "push" refund (where one transaction refunds all contributors) would:
+- Fail with thousands of contributors due to resource limits
+- Be expensive and unpredictable in cost
+- Create a single point of failure
+
+### How it Works
+
+If the campaign goal is **not met** by the deadline:
+1. Each contributor must claim their own refund by calling `refund_single`
+2. Contributors can claim at any time after the deadline
+3. The refund is processed immediately and securely
+
+### Example: Claiming Your Refund
+
+```bash
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network testnet \
+  --source <YOUR_SECRET_KEY> \
+  -- refund_single \
+  --contributor <YOUR_ADDRESS>
 ```
 
 ## Deployment (Testnet)
@@ -88,6 +120,10 @@ stellar contract deploy \
   --network testnet \
   --source <YOUR_SECRET_KEY>
 ```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a full history of notable changes.
 
 ## Contributing
 
