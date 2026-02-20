@@ -71,6 +71,15 @@ impl CrowdfundContract {
 
         env.storage().instance().set(&DataKey::Creator, &creator);
         env.storage().instance().set(&DataKey::Token, &token);
+
+        /// Returns the list of all contributor addresses.
+        pub fn contributors(env: Env) -> Vec<Address> {
+            env.storage()
+                .instance()
+                .get(&DataKey::Contributors)
+                .unwrap_or(Vec::new(&env))
+        }
+
         env.storage().instance().set(&DataKey::Goal, &goal);
         env.storage().instance().set(&DataKey::Deadline, &deadline);
         env.storage().instance().set(&DataKey::MinContribution, &min_contribution);
@@ -299,4 +308,18 @@ impl CrowdfundContract {
     pub fn min_contribution(env: Env) -> i128 {
         env.storage().instance().get(&DataKey::MinContribution).unwrap()
     }
+
+    /// Returns the token contract address used for contributions.
+    pub fn token(env: Env) -> Address {
+        env.storage().instance().get(&DataKey::Token).unwrap()
+    }
+
+    /// Returns the list of all contributor addresses.
+    pub fn contributors(env: Env) -> Vec<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Contributors)
+            .unwrap_or(Vec::new(&env))
+    }
+
 }

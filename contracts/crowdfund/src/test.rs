@@ -409,3 +409,129 @@ fn test_contribute_above_minimum() {
     assert_eq!(client.total_raised(), 50_000);
     assert_eq!(client.contribution(&contributor), 50_000);
 }
+
+#[test]
+fn test_token_address_view() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    assert_eq!(client.token(), token_address);
+}
+
+// ── Contributors List Tests ────────────────────────────────────────────────
+
+#[test]
+fn test_contributors_empty_list() {
+    let (env, client, creator, token_address, _admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let contributors = client.contributors();
+    assert_eq!(contributors.len(), 0);
+}
+
+#[test]
+fn test_contributors_single_contributor() {
+    let (env, client, creator, token_address, admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let alice = Address::generate(&env);
+    mint_to(&env, &token_address, &admin, &alice, 500_000);
+    client.contribute(&alice, &500_000);
+
+    let contributors = client.contributors();
+    assert_eq!(contributors.len(), 1);
+    assert_eq!(contributors.get(0).unwrap(), alice);
+}
+
+#[test]
+fn test_contributors_multiple_contributors() {
+    let (env, client, creator, token_address, admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let charlie = Address::generate(&env);
+    
+    mint_to(&env, &token_address, &admin, &alice, 300_000);
+    mint_to(&env, &token_address, &admin, &bob, 400_000);
+    mint_to(&env, &token_address, &admin, &charlie, 300_000);
+
+    client.contribute(&alice, &300_000);
+    client.contribute(&bob, &400_000);
+    client.contribute(&charlie, &300_000);
+
+    let contributors = client.contributors();
+    assert_eq!(contributors.len(), 3);
+    assert!(contributors.contains(&alice));
+    assert!(contributors.contains(&bob));
+    assert!(contributors.contains(&charlie));
+}
+
+#[test]
+fn test_contributors_duplicate_contributions() {
+    let (env, client, creator, token_address, admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let alice = Address::generate(&env);
+    mint_to(&env, &token_address, &admin, &alice, 600_000);
+
+    // Alice contributes multiple times
+    client.contribute(&alice, &300_000);
+    client.contribute(&alice, &300_000);
+
+    let contributors = client.contributors();
+    // Should only appear once in the list
+    assert_eq!(contributors.len(), 1);
+    assert_eq!(contributors.get(0).unwrap(), alice);
+}
+
+#[test]
+fn test_contributors_order_preserved() {
+    let (env, client, creator, token_address, admin) = setup_env();
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let goal: i128 = 1_000_000;
+    let min_contribution: i128 = 1_000;
+    client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let charlie = Address::generate(&env);
+    
+    mint_to(&env, &token_address, &admin, &alice, 100_000);
+    mint_to(&env, &token_address, &admin, &bob, 100_000);
+    mint_to(&env, &token_address, &admin, &charlie, 100_000);
+
+    // Contribute in specific order
+    client.contribute(&alice, &100_000);
+    client.contribute(&bob, &100_000);
+    client.contribute(&charlie, &100_000);
+
+    let contributors = client.contributors();
+    assert_eq!(contributors.len(), 3);
+    // Verify order is preserved
+    assert_eq!(contributors.get(0).unwrap(), alice);
+    assert_eq!(contributors.get(1).unwrap(), bob);
+    assert_eq!(contributors.get(2).unwrap(), charlie);
+}
