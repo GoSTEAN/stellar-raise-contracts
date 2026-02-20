@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, contracterror, token, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, contracterror, contracttype, token, Address, Env, Vec};
 
 #[cfg(test)]
 mod test;
@@ -72,6 +72,19 @@ pub enum ContractError {
     GoalReached = 5,
 }
 
+// ── Contract Error ──────────────────────────────────────────────────────────
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum ContractError {
+    AlreadyInitialized = 1,
+    CampaignEnded = 2,
+    CampaignStillActive = 3,
+    GoalNotReached = 4,
+    GoalReached = 5,
+}
+
 // ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -102,6 +115,16 @@ impl CrowdfundContract {
 
         creator.require_auth();
 
+        // Validate goal is positive
+        if goal <= 0 {
+            return Err(ContractError::InvalidGoal);
+        }
+
+        // Validate deadline is in the future
+        if deadline <= env.ledger().timestamp() {
+            return Err(ContractError::InvalidDeadline);
+        }
+
         env.storage().instance().set(&DataKey::Creator, &creator);
         env.storage().instance().set(&DataKey::Token, &token);
         env.storage().instance().set(&DataKey::Goal, &goal);
@@ -118,11 +141,6 @@ impl CrowdfundContract {
         env.storage()
             .persistent()
             .set(&DataKey::Contributors, &empty_contributors);
-
-        let empty_roadmap: Vec<RoadmapItem> = Vec::new(&env);
-        env.storage()
-            .instance()
-            .set(&DataKey::Roadmap, &empty_roadmap);
 
         Ok(())
     }
@@ -275,17 +293,6 @@ impl CrowdfundContract {
         let total: i128 = env.storage().instance().get(&DataKey::TotalRaised).unwrap();
         if total >= goal {
             return Err(ContractError::GoalReached);
-        }
-
-        let contribution_key = DataKey::Contribution(contributor.clone());
-        let amount: i128 = env
-            .storage()
-            .persistent()
-            .get(&contribution_key)
-            .unwrap_or(0);
-
-        if amount == 0 {
-            panic!("no contribution to refund");
         }
 
         let token_address: Address = env.storage().instance().get(&DataKey::Token).unwrap();

@@ -68,7 +68,7 @@ fn test_initialize() {
 }
 
 #[test]
-fn test_double_initialize_returns_error() {
+fn test_double_initialize_panics() {
     let (env, client, creator, token_address, _admin) = setup_env();
 
     let deadline = env.ledger().timestamp() + 3600;
@@ -298,7 +298,7 @@ fn test_refund_single_when_goal_not_met() {
 }
 
 #[test]
-fn test_refund_single_when_goal_reached_panics() {
+fn test_refund_when_goal_reached_panics() {
     let (env, client, creator, token_address, admin) = setup_env();
 
     let deadline = env.ledger().timestamp() + 3600;
@@ -318,7 +318,7 @@ fn test_refund_single_when_goal_reached_panics() {
 
     env.ledger().set_timestamp(deadline + 1);
 
-    let result = client.try_refund_single(&contributor);
+    let result = client.try_refund();
     
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().unwrap(), crate::ContractError::GoalReached);
@@ -349,10 +349,9 @@ fn test_bug_condition_exploration_all_error_conditions_panic() {
         let (env, client, creator, token_address, _admin) = setup_env();
         let deadline = env.ledger().timestamp() + 3600;
         let goal: i128 = 1_000_000;
-        let min_contribution: i128 = 1_000;
         
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
-        let result = client.try_initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
+        let result = client.try_initialize(&creator, &token_address, &goal, &deadline);
         
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().unwrap(), ContractError::AlreadyInitialized);
@@ -363,8 +362,7 @@ fn test_bug_condition_exploration_all_error_conditions_panic() {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + 100;
         let goal: i128 = 1_000_000;
-        let min_contribution: i128 = 1_000;
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
         
         env.ledger().set_timestamp(deadline + 1);
         
@@ -381,8 +379,7 @@ fn test_bug_condition_exploration_all_error_conditions_panic() {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + 3600;
         let goal: i128 = 1_000_000;
-        let min_contribution: i128 = 1_000;
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
         
         let contributor = Address::generate(&env);
         mint_to(&env, &token_address, &admin, &contributor, 1_000_000);
@@ -399,8 +396,7 @@ fn test_bug_condition_exploration_all_error_conditions_panic() {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + 3600;
         let goal: i128 = 1_000_000;
-        let min_contribution: i128 = 1_000;
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
         
         let contributor = Address::generate(&env);
         mint_to(&env, &token_address, &admin, &contributor, 500_000);
@@ -413,58 +409,75 @@ fn test_bug_condition_exploration_all_error_conditions_panic() {
         assert_eq!(result.unwrap_err().unwrap(), ContractError::GoalNotReached);
     }
 
-    // Test 5: Early refund_single
+    // Test 5: Early refund
     {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + 3600;
         let goal: i128 = 1_000_000;
-        let min_contribution: i128 = 1_000;
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
         
         let contributor = Address::generate(&env);
         mint_to(&env, &token_address, &admin, &contributor, 500_000);
         client.contribute(&contributor, &500_000);
         
-        let result = client.try_refund_single(&contributor);
+        let result = client.try_refund();
         
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().unwrap(), ContractError::CampaignStillActive);
     }
 
-    // Test 6: Refund_single after success
+    // Test 6: Refund after success
     {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + 3600;
         let goal: i128 = 1_000_000;
-        let min_contribution: i128 = 1_000;
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
         
         let contributor = Address::generate(&env);
         mint_to(&env, &token_address, &admin, &contributor, 1_000_000);
         client.contribute(&contributor, &1_000_000);
         
         env.ledger().set_timestamp(deadline + 1);
-        let result = client.try_refund_single(&contributor);
+        let result = client.try_refund();
         
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().unwrap(), ContractError::GoalReached);
     }
 }
 
+// ── Preservation Property Tests ────────────────────────────────────────────
+
 use proptest::prelude::*;
+
+/// **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6**
+///
+/// **Property 2: Preservation** - Successful Execution Paths
+///
+/// This test verifies that all successful execution paths work correctly
+/// on the UNFIXED code. These behaviors MUST be preserved after the fix.
+///
+/// **IMPORTANT**: This test is EXPECTED TO PASS on unfixed code.
+/// When it passes, it confirms the baseline behavior to preserve.
+///
+/// The test covers all successful operations:
+/// 1. First initialization with valid parameters stores creator, token, goal, deadline, and initializes total_raised to 0
+/// 2. Valid contributions before deadline transfer tokens, update balances, and track contributors
+/// 3. Successful withdrawal by creator after deadline when goal met transfers funds and resets total_raised
+/// 4. Successful refund after deadline when goal not met refunds all contributors
+/// 5. View functions (total_raised, goal, deadline, contribution) return correct values
+/// 6. Multiple contributors are tracked correctly with individual and aggregate totals
 
 proptest! {
     #[test]
     fn prop_preservation_first_initialization(
         goal in 1_000i128..10_000_000i128,
         deadline_offset in 100u64..10_000u64,
-        min_contribution in 100i128..10_000i128,
     ) {
         let (env, client, creator, token_address, _admin) = setup_env();
         let deadline = env.ledger().timestamp() + deadline_offset;
 
         // Test 3.1: First initialization stores all values correctly
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
 
         prop_assert_eq!(client.goal(), goal);
         prop_assert_eq!(client.deadline(), deadline);
@@ -479,9 +492,8 @@ proptest! {
     ) {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + deadline_offset;
-        let min_contribution: i128 = 1_000;
 
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
 
         let contributor = Address::generate(&env);
         mint_to(&env, &token_address, &admin, &contributor, contribution_amount);
@@ -500,9 +512,8 @@ proptest! {
     ) {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + deadline_offset;
-        let min_contribution: i128 = 1_000;
 
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
 
         let contributor = Address::generate(&env);
         mint_to(&env, &token_address, &admin, &contributor, goal);
@@ -522,19 +533,18 @@ proptest! {
     }
 
     #[test]
-    fn prop_preservation_successful_refund_single(
+    fn prop_preservation_successful_refund(
         goal in 2_000_000i128..10_000_000i128,
         deadline_offset in 100u64..10_000u64,
         contribution_amount in 100_000i128..1_000_000i128,
     ) {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + deadline_offset;
-        let min_contribution: i128 = 1_000;
 
         // Ensure contribution is less than goal
         let contribution = contribution_amount.min(goal - 1);
 
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
 
         let contributor = Address::generate(&env);
         mint_to(&env, &token_address, &admin, &contributor, contribution);
@@ -543,12 +553,12 @@ proptest! {
         // Move past deadline (goal not met)
         env.ledger().set_timestamp(deadline + 1);
 
-        // Test 3.4: Successful refund_single returns funds to contributor
-        client.refund_single(&contributor);
+        // Test 3.4: Successful refund returns funds to contributors
+        client.refund();
 
         let token_client = token::Client::new(&env, &token_address);
         prop_assert_eq!(token_client.balance(&contributor), contribution);
-        prop_assert_eq!(client.contribution(&contributor), 0);
+        prop_assert_eq!(client.total_raised(), 0);
     }
 
     #[test]
@@ -559,9 +569,8 @@ proptest! {
     ) {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + deadline_offset;
-        let min_contribution: i128 = 1_000;
 
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
 
         let contributor = Address::generate(&env);
         mint_to(&env, &token_address, &admin, &contributor, contribution_amount);
@@ -584,9 +593,8 @@ proptest! {
     ) {
         let (env, client, creator, token_address, admin) = setup_env();
         let deadline = env.ledger().timestamp() + deadline_offset;
-        let min_contribution: i128 = 1_000;
 
-        client.initialize(&creator, &token_address, &goal, &deadline, &min_contribution);
+        client.initialize(&creator, &token_address, &goal, &deadline);
 
         let alice = Address::generate(&env);
         let bob = Address::generate(&env);
