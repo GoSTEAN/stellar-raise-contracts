@@ -133,6 +133,10 @@ stellar contract deploy \
 
 See [CHANGELOG.md](CHANGELOG.md) for a full history of notable changes.
 
+## Security
+
+Please review our [Security Policy](SECURITY.md) for responsible disclosure guidelines.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
