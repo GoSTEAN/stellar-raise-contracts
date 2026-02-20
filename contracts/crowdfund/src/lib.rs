@@ -93,6 +93,16 @@ impl CrowdfundContract {
 
         creator.require_auth();
 
+        // Validate goal is positive
+        if goal <= 0 {
+            return Err(ContractError::InvalidGoal);
+        }
+
+        // Validate deadline is in the future
+        if deadline <= env.ledger().timestamp() {
+            return Err(ContractError::InvalidDeadline);
+        }
+
         env.storage().instance().set(&DataKey::Creator, &creator);
         env.storage().instance().set(&DataKey::Token, &token);
         env.storage().instance().set(&DataKey::Goal, &goal);
