@@ -50,6 +50,13 @@ pub struct PlatformConfig {
 /// Represents all storage keys used by the crowdfund contract.
 #[derive(Clone)]
 #[contracttype]
+pub struct Contribution {
+    pub amount: i128,
+    pub is_early_bird: bool,
+}
+
+#[derive(Clone)]
+#[contracttype]
 pub struct CampaignStats {
     /// Total amount raised so far.
     pub total_raised: i128,
@@ -159,6 +166,16 @@ impl CrowdfundContract {
             return Err(ContractError::AlreadyInitialized);
         }
 
+        let eb_deadline = match early_bird_deadline {
+            Some(eb) => {
+                if eb >= deadline {
+                    panic!("early bird deadline must be before campaign deadline");
+                }
+                eb
+            }
+            None => core::cmp::min(env.ledger().timestamp() + 86400, deadline.saturating_sub(1)),
+        };
+
         creator.require_auth();
 
         // Validate platform fee if provided.
@@ -176,7 +193,9 @@ impl CrowdfundContract {
             .instance()
             .set(&DataKey::MinContribution, &min_contribution);
         env.storage().instance().set(&DataKey::TotalRaised, &0i128);
-        env.storage().instance().set(&DataKey::Status, &Status::Active);
+        env.storage()
+            .instance()
+            .set(&DataKey::Status, &Status::Active);
 
         let empty_contributors: Vec<Address> = Vec::new(&env);
         env.storage()
