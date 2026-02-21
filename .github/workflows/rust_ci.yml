@@ -41,5 +41,24 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Run coverage report
+        run: cargo tarpaulin --workspace --out Xml
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: cobertura.xml
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: cobertura.xml
+          fail_ci_if_error: false
+
       - name: Build WASM (release)
         run: cargo build --release --target wasm32-unknown-unknown
